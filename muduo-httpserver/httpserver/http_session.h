@@ -1,20 +1,72 @@
 #ifndef HTTP_SESSION_H
 #define HTTP_SESSION_H
 
+#include <boost/function.hpp>
+
+#include "http_transaction.h"
+#include "http_codec.h"
+
+namespace muduo
+{
+namespace net
+{
+  class Buffer;
+  class TcpConnection;
+  typedef boost::shared_ptr<TcpConnection> TcpConnectionPtr;
+}
+}
+
 namespace bytree
 {
-class HTTPCodec;
-
-class HTTPSession
+class HTTPSession : public boost::enable_shared_from_this<HTTPSession>
 {
  public:
-  void OnRequest(); 
+  typedef boost::shared_ptr<HTTPSession> HTTPSessionPtr;
+  typedef boost::function<void (HTTPSessionPtr)> CloseCallback;
+  explicit HTTPSession(const std::string& name,
+                       muduo::net::TcpConnectionPtr conn,
+                       const HTTPTransactionFactoryPtr& factory)
+    : name_(name),
+      conn_(conn),
+      transaction_factory_(factory)
+  {
+    SetCodecCallback();
+  }
+
+  std::string GetName() { return name_; }
+  muduo::net::TcpConnectionPtr GetConnection() { return conn_; }
+  
+  // TODO
+  void SetCodecCallback();
+
+  void SetCloseCallback(const CloseCallback& cb)
+  { close_callback_ = cb; }
+
+  void OnData(muduo::net::Buffer* buf);
+  void OnMessageBegin(HTTPCodec::StreamID id);
+  void OnMessageComplete(HTTPCodec::StreamID id, HTTPRequest& request);
+
+  void RemoveTransaction(const HTTPTransactionPtr& tran);
+
+  void FormatResponse(HTTPResponse& resp); 
+  void SendResponse(HTTPResponse& response);
+  void Send(std::string& message);
+
+  // 主动关闭
+  void HandleClose();
+  // call when HTTPServer remove me
+  void Destory();
+
  private:
-  HTTPCodec codec_;  
+  std::string name_;
+  muduo::net::TcpConnectionPtr conn_;
+  HTTPCodec codec_;
+  std::map<HTTPCodec::StreamID, HTTPTransactionPtr> transaction_map_;
+  boost::shared_ptr<HTTPTransactionFactory> transaction_factory_;
+  CloseCallback close_callback_;
 };
 
 typedef boost::shared_ptr<HTTPSession> HTTPSessionPtr;
-
 }
 
 #endif
